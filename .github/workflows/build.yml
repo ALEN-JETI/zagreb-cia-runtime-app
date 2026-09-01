@@ -1,0 +1,102 @@
+name: Build and publish Zagreb CIA Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  ARCHITECTURES: '["aarch64"]'
+  IMAGE_NAME: zagreb-cia-runtime
+  REGISTRY_PREFIX: ghcr.io/alen-jeti
+  VERSION: "0.1.0"
+
+jobs:
+  prepare:
+    name: Prepare aarch64 build
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require release tag to match app version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          test "$RELEASE_TAG" = "$VERSION" || {
+            echo "Release tag $RELEASE_TAG must equal config version $VERSION."
+            exit 1
+          }
+
+      - name: Prepare build matrix
+        id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.06.0
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          image-name: ${{ env.IMAGE_NAME }}
+          registry-prefix: ${{ env.REGISTRY_PREFIX }}
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build, sign and optionally publish image
+        uses: home-assistant/builder/actions/build-image@2026.06.0
+        with:
+          arch: ${{ matrix.arch }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: ./zagreb_cia_runtime
+          image: ${{ matrix.image }}
+          image-tags: |
+            ${{ env.VERSION }}
+            latest
+          labels: |
+            io.hass.type=app
+            io.hass.name=Zagreb CIA Runtime
+            io.hass.description=Minimal isolated runtime proof for Zagreb HA CIA.
+          push: ${{ github.event_name == 'release' }}
+          version: ${{ env.VERSION }}
+
+  manifest:
+    name: Publish signed manifest
+    needs: [prepare, build]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Publish multi-arch manifest
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.06.0
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tags: |
+            ${{ env.VERSION }}
+            latest
+          registry-prefix: ${{ env.REGISTRY_PREFIX }}
+

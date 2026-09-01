@@ -1,0 +1,24 @@
+name: Zagreb CIA Runtime
+slug: zagreb_cia_runtime
+description: Minimal isolated runtime proof for Zagreb HA CIA.
+version: "0.1.0"
+url: "https://github.com/ALEN-JETI/zagreb-cia-runtime-app/tree/main/zagreb_cia_runtime"
+arch:
+  - aarch64
+startup: application
+boot: auto
+init: false
+ingress: false
+ingress_port: 0
+ports: {}
+ports_description: {}
+host_network: false
+full_access: false
+apparmor: true
+privileged: []
+usb: false
+map: []
+options: {}
+schema: {}
+image: "ghcr.io/alen-jeti/zagreb-cia-runtime"
+

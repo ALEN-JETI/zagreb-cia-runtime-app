@@ -1,7 +1,7 @@
 name: Zagreb CIA Runtime
 slug: zagreb_cia_runtime
-description: Minimal isolated runtime proof for Zagreb HA CIA.
-version: "0.1.0"
+description: Isolated Zagreb HA CIA runtime with a fail-closed OTBR read-only check.
+version: "0.2.0"
 url: "https://github.com/ALEN-JETI/zagreb-cia-runtime-app/tree/main/zagreb_cia_runtime"
 arch:
   - aarch64
@@ -21,4 +21,3 @@ map: []
 options: {}
 schema: {}
 image: "ghcr.io/alen-jeti/zagreb-cia-runtime"
-

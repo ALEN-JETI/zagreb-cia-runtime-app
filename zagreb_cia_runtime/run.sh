@@ -12,7 +12,7 @@ shutdown() {
 
 trap shutdown TERM INT
 
-log "self-test=ok scope=isolated network=unused secrets=absent api_access=none"
+log "self-test=ok scope=isolated network=otbr-read-only-on-demand secrets=absent api_access=none"
 log "runtime=started"
 
 while true; do

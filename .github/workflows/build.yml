@@ -14,7 +14,7 @@ env:
   ARCHITECTURES: '["aarch64"]'
   IMAGE_NAME: zagreb-cia-runtime
   REGISTRY_PREFIX: ghcr.io/alen-jeti
-  VERSION: "0.1.0"
+  VERSION: "0.2.0"
 
 jobs:
   prepare:
@@ -76,7 +76,7 @@ jobs:
           labels: |
             io.hass.type=app
             io.hass.name=Zagreb CIA Runtime
-            io.hass.description=Minimal isolated runtime proof for Zagreb HA CIA.
+            io.hass.description=Isolated Zagreb HA CIA runtime with an OTBR read-only check.
           push: ${{ github.event_name == 'release' }}
           version: ${{ env.VERSION }}
 
@@ -99,4 +99,3 @@ jobs:
             ${{ env.VERSION }}
             latest
           registry-prefix: ${{ env.REGISTRY_PREFIX }}
-

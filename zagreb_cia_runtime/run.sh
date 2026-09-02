@@ -5,17 +5,7 @@ log() {
   bashio::log.info "zagreb_cia_runtime: $1"
 }
 
-shutdown() {
-  log "clean-stop=ok"
-  exit 0
-}
-
-trap shutdown TERM INT
-
 log "self-test=ok scope=isolated network=otbr-read-only-on-demand secrets=absent api_access=none"
 log "runtime=started"
 
-while true; do
-  sleep 3600 &
-  wait "$!"
-done
+exec python3 -u /cia_observer_dispatcher.py

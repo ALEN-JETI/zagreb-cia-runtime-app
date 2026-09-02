@@ -14,7 +14,7 @@ env:
   ARCHITECTURES: '["aarch64"]'
   IMAGE_NAME: zagreb-cia-runtime
   REGISTRY_PREFIX: ghcr.io/alen-jeti
-  VERSION: "0.2.0"
+  VERSION: "0.3.0"
 
 jobs:
   prepare:

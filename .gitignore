@@ -4,4 +4,6 @@
 secrets.yaml
 credentials*
 *.token
-
+__pycache__/
+*.py[cod]
+.pytest_cache/

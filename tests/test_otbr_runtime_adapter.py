@@ -83,12 +83,16 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
             any(value in serialized for value in (*SENSITIVE_VALUES, "must-not-leak"))
         )
 
-    def test_active_runtime_is_healthy_and_sanitized(self) -> None:
-        result = adapter._evaluate_node(active_payload(), now=NOW)
-        self.assertEqual(result["check_status"], "OK")
-        self.assertEqual(result["border_router_active"], "TRUE")
-        self.assertEqual(result["routing_ready"], "TRUE")
-        self.assert_allowlisted(result)
+    def test_attached_roles_with_complete_routing_are_healthy_and_sanitized(self) -> None:
+        for role in ("child", "router", "leader"):
+            with self.subTest(role=role):
+                payload = active_payload()
+                payload["role"] = role
+                result = adapter._evaluate_node(payload, now=NOW)
+                self.assertEqual(result["check_status"], "OK")
+                self.assertEqual(result["border_router_active"], "TRUE")
+                self.assertEqual(result["routing_ready"], "TRUE")
+                self.assert_allowlisted(result)
 
     def test_explicit_inactive_runtime_is_false(self) -> None:
         for role in ("detached", "disabled"):
@@ -148,25 +152,31 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
                 self.assertEqual(result["routing_ready"], "UNKNOWN")
                 self.assert_allowlisted(result)
 
-    def test_missing_required_routing_field_is_unknown(self) -> None:
+    def test_attached_role_with_missing_routing_field_keeps_border_router_active(self) -> None:
         for field in ("omrIpv6Address", "rlocAddress", "leaderData", "baId", "routerCount"):
             with self.subTest(field=field):
                 payload = active_payload()
+                payload["role"] = "child"
                 del payload[field]
                 result = adapter._evaluate_node(payload, now=NOW)
                 self.assertEqual(result["check_status"], "UNKNOWN")
-                self.assertEqual(result["border_router_active"], "UNKNOWN")
+                self.assertEqual(result["border_router_active"], "TRUE")
                 self.assertEqual(result["routing_ready"], "UNKNOWN")
                 self.assert_allowlisted(result)
 
-    def test_unexpected_role_is_unknown_not_false(self) -> None:
+    def test_unknown_future_role_is_unknown_not_false(self) -> None:
         payload = active_payload()
-        payload["role"] = "child"
+        payload["role"] = "future-role"
         result = adapter._evaluate_node(payload, now=NOW)
         self.assertEqual(result["check_status"], "UNKNOWN")
         self.assertEqual(result["border_router_active"], "UNKNOWN")
         self.assertEqual(result["routing_ready"], "UNKNOWN")
         self.assert_allowlisted(result)
+
+    def test_role_sets_and_output_scope_are_exact(self) -> None:
+        self.assertEqual(adapter.ATTACHED_ROLES, {"child", "router", "leader"})
+        self.assertEqual(adapter.INACTIVE_ROLES, {"disabled", "detached"})
+        self.assertEqual(adapter.OUTPUT_FIELDS, EXPECTED_FIELDS)
 
     def test_oversized_response_is_rejected(self) -> None:
         body = b"{" + b" " * adapter.MAX_RESPONSE_BYTES + b"}"

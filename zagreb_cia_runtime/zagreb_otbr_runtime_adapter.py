@@ -15,7 +15,7 @@ OTBR_NODE_URL: Final = "http://core-openthread-border-router:8081/api/node"
 EVIDENCE_SOURCE: Final = "otbr_rest_node"
 REQUEST_TIMEOUT_SECONDS: Final = 3.0
 MAX_RESPONSE_BYTES: Final = 16 * 1024
-ACTIVE_ROLES: Final = frozenset({"leader", "router"})
+ATTACHED_ROLES: Final = frozenset({"child", "router", "leader"})
 INACTIVE_ROLES: Final = frozenset({"disabled", "detached"})
 OUTPUT_FIELDS: Final = frozenset(
     {
@@ -135,10 +135,10 @@ def _evaluate_node(payload: Any, *, now: datetime | None = None) -> dict[str, st
             now=now,
         )
 
-    if role not in ACTIVE_ROLES:
+    if role not in ATTACHED_ROLES:
         return _result(
             check_status="UNKNOWN",
-            short_reason="OTBR-Rolle ist nicht eindeutig als routing-aktiv belegt.",
+            short_reason="OTBR meldet eine unbekannte Thread-Geraeterolle.",
             now=now,
         )
 
@@ -157,7 +157,8 @@ def _evaluate_node(payload: Any, *, now: datetime | None = None) -> dict[str, st
     if not routing_evidence_complete:
         return _result(
             check_status="UNKNOWN",
-            short_reason="Aktive OTBR-Rolle belegt, Routingmerkmale jedoch unvollstaendig.",
+            border_router_active="TRUE",
+            short_reason="OTBR ist angehaengt, Routingmerkmale jedoch unvollstaendig.",
             now=now,
         )
 
@@ -165,7 +166,7 @@ def _evaluate_node(payload: Any, *, now: datetime | None = None) -> dict[str, st
         check_status="OK",
         border_router_active="TRUE",
         routing_ready="TRUE",
-        short_reason="Aktive OTBR-Rolle und aktuelle Routingmerkmale sind belegt.",
+        short_reason="OTBR ist angehaengt und aktuelle Routingmerkmale sind belegt.",
         now=now,
     )
 

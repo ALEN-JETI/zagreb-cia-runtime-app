@@ -8,11 +8,18 @@ check, `zagreb_ha_get_otbr_runtime_status`. It performs one bounded HTTP GET
 against the fixed Supervisor-internal OTBR resource and returns only six
 sanitized health fields.
 
-The prepared, unpublished `0.3.0` package adds a serial, allowlist-based
+The published `0.3.0` package adds a serial, allowlist-based
 observer dispatcher on the official Home Assistant App STDIN channel. The only
 registered observer is `otbr_runtime_status`; startup never invokes it. Every
 request must contain exactly `observer` and a validated `request_id`. Invalid,
 oversized or unknown requests fail closed and do not terminate the runtime.
+
+Release `0.3.1` corrects the OTBR role semantics without changing the external
+contract. OpenThread roles `child`, `router` and `leader` are treated as
+attached. An attached role proves that the local OTBR endpoint is active, while
+`routing_ready` becomes `TRUE` only when all required routing evidence is
+present. Roles `disabled` and `detached` remain explicitly inactive; unknown
+future role strings remain `UNKNOWN`.
 
 The runtime still has no external ports, ingress, host networking, secrets,
 Home Assistant API, Supervisor API, Docker API, dashboard, repair or external

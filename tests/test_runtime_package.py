@@ -11,7 +11,7 @@ APP = ROOT / "zagreb_cia_runtime"
 class RuntimePackageTests(unittest.TestCase):
     def test_runtime_security_profile_and_version(self) -> None:
         config = (APP / "config.yaml").read_text(encoding="utf-8")
-        self.assertIn('version: "0.3.1"', config)
+        self.assertIn('version: "0.3.2"', config)
         self.assertIn("stdin: true", config)
         self.assertIn("host_network: false", config)
         self.assertIn("full_access: false", config)
@@ -36,7 +36,7 @@ class RuntimePackageTests(unittest.TestCase):
 
     def test_build_package_contains_dispatcher_without_external_interface(self) -> None:
         dockerfile = (APP / "Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("ARG BUILD_VERSION=0.3.1", dockerfile)
+        self.assertIn("ARG BUILD_VERSION=0.3.2", dockerfile)
         self.assertIn(
             "COPY zagreb_otbr_runtime_adapter.py /zagreb_otbr_runtime_adapter.py",
             dockerfile,
@@ -51,7 +51,7 @@ class RuntimePackageTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('VERSION: "0.3.1"', workflow)
+        self.assertIn('VERSION: "0.3.2"', workflow)
         self.assertIn('ARCHITECTURES: \'["aarch64"]\'', workflow)
         self.assertIn("context: ./zagreb_cia_runtime", workflow)
         self.assertIn("push: ${{ github.event_name == 'release' }}", workflow)

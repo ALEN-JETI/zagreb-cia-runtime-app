@@ -3,9 +3,37 @@ from __future__ import annotations
 import io
 import json
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 from zagreb_cia_runtime import cia_observer_dispatcher as dispatcher
+from zagreb_cia_runtime import zagreb_otbr_runtime_adapter as adapter
+
+
+NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
+SENSITIVE_ROUTING_VALUES = (
+    "fd11:22::1",
+    "fd7a:9882::f000",
+    "e11e23c164311ce642f93297b095b2f8",
+)
+NEW_031_SHORT_REASONS = frozenset(
+    {
+        "OTBR meldet eine unbekannte Thread-Geraeterolle.",
+        "OTBR ist angehaengt, Routingmerkmale jedoch unvollstaendig.",
+        "OTBR ist angehaengt und aktuelle Routingmerkmale sind belegt.",
+    }
+)
+
+
+def real_adapter_payload(role: str = "child") -> dict[str, object]:
+    return {
+        "role": role,
+        "omrIpv6Address": [SENSITIVE_ROUTING_VALUES[0]],
+        "rlocAddress": SENSITIVE_ROUTING_VALUES[1],
+        "leaderData": {"partitionId": 42},
+        "baId": SENSITIVE_ROUTING_VALUES[2],
+        "routerCount": 0,
+    }
 
 
 def adapter_result(check_status: str = "OK", *, marker: int = 0) -> dict[str, str]:
@@ -67,6 +95,69 @@ class ObserverDispatcherTests(unittest.TestCase):
                 "result": adapter_result(),
             },
         )
+
+    def test_real_031_attached_role_results_pass_dispatcher_contract(self) -> None:
+        for role in ("child", "router", "leader"):
+            with self.subTest(role=role):
+                result = adapter._evaluate_node(real_adapter_payload(role), now=NOW)
+                response = run_stream([request(f"real-031-{role}")], lambda: result)[0]
+
+                self.assertEqual(response["status"], "COMPLETED")
+                self.assertEqual(response["result"], result)
+                serialized = json.dumps(response)
+                for sensitive in SENSITIVE_ROUTING_VALUES:
+                    self.assertNotIn(sensitive, serialized)
+
+    def test_real_031_short_reason_contract_is_exact(self) -> None:
+        incomplete = real_adapter_payload()
+        del incomplete["routerCount"]
+        actual = {
+            adapter._evaluate_node(real_adapter_payload(), now=NOW)["short_reason"],
+            adapter._evaluate_node(incomplete, now=NOW)["short_reason"],
+            adapter._evaluate_node(real_adapter_payload("future-role"), now=NOW)[
+                "short_reason"
+            ],
+        }
+
+        self.assertEqual(actual, NEW_031_SHORT_REASONS)
+        self.assertTrue(NEW_031_SHORT_REASONS <= dispatcher.ALLOWED_SHORT_REASONS)
+
+    def test_real_031_incomplete_routing_result_passes_dispatcher_contract(self) -> None:
+        payload = real_adapter_payload()
+        del payload["routerCount"]
+        result = adapter._evaluate_node(payload, now=NOW)
+        response = run_stream([request("real-031-incomplete")], lambda: result)[0]
+
+        self.assertEqual(
+            result["short_reason"],
+            "OTBR ist angehaengt, Routingmerkmale jedoch unvollstaendig.",
+        )
+        self.assertEqual(response["status"], "COMPLETED")
+        self.assertEqual(response["result"], result)
+
+    def test_real_031_unknown_role_result_passes_dispatcher_fail_closed(self) -> None:
+        result = adapter._evaluate_node(real_adapter_payload("future-role"), now=NOW)
+        response = run_stream([request("real-031-unknown-role")], lambda: result)[0]
+
+        self.assertEqual(
+            result["short_reason"],
+            "OTBR meldet eine unbekannte Thread-Geraeterolle.",
+        )
+        self.assertEqual(result["border_router_active"], "UNKNOWN")
+        self.assertEqual(result["routing_ready"], "UNKNOWN")
+        self.assertEqual(response["status"], "COMPLETED")
+        self.assertEqual(response["result"], result)
+
+    def test_real_031_result_with_sensitive_extra_field_is_rejected(self) -> None:
+        result = adapter._evaluate_node(real_adapter_payload(), now=NOW)
+        result["raw_payload"] = "fd00::secret dataset leader"
+        response = run_stream([request("real-031-sensitive")], lambda: result)[0]
+        serialized = json.dumps(response)
+
+        self.assertEqual(response["status"], "ERROR")
+        self.assertIsNone(response["result"])
+        for forbidden in ("fd00", "dataset", "leader", "raw_payload"):
+            self.assertNotIn(forbidden, serialized)
 
     def test_unknown_observer_is_rejected_without_call(self) -> None:
         raw = json.dumps({"observer": "unknown", "request_id": "audit-002"}).encode()

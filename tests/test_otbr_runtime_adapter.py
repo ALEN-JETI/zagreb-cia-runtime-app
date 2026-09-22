@@ -31,7 +31,7 @@ SENSITIVE_VALUES = (
 
 def active_payload() -> dict:
     return {
-        "role": "leader",
+        "state": "leader",
         "omrIpv6Address": [SENSITIVE_VALUES[1]],
         "rlocAddress": SENSITIVE_VALUES[2],
         "leaderData": {"partitionId": 42},
@@ -87,7 +87,7 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
         for role in ("child", "router", "leader"):
             with self.subTest(role=role):
                 payload = active_payload()
-                payload["role"] = role
+                payload["state"] = role
                 result = adapter._evaluate_node(payload, now=NOW)
                 self.assertEqual(result["check_status"], "OK")
                 self.assertEqual(result["border_router_active"], "TRUE")
@@ -98,7 +98,7 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
         for role in ("detached", "disabled"):
             with self.subTest(role=role):
                 payload = active_payload()
-                payload["role"] = role
+                payload["state"] = role
                 result = adapter._evaluate_node(payload, now=NOW)
                 self.assertEqual(result["check_status"], "OK")
                 self.assertEqual(result["border_router_active"], "FALSE")
@@ -144,7 +144,7 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
         self.assert_allowlisted(result)
 
     def test_unknown_or_missing_schema_is_unknown(self) -> None:
-        for payload in ([], {"unexpected": True}, {"role": 3}):
+        for payload in ([], {"unexpected": True}, {"state": 3}):
             with self.subTest(payload=payload):
                 result = adapter._evaluate_node(payload, now=NOW)
                 self.assertEqual(result["check_status"], "UNKNOWN")
@@ -156,7 +156,7 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
         for field in ("omrIpv6Address", "rlocAddress", "leaderData", "baId", "routerCount"):
             with self.subTest(field=field):
                 payload = active_payload()
-                payload["role"] = "child"
+                payload["state"] = "child"
                 del payload[field]
                 result = adapter._evaluate_node(payload, now=NOW)
                 self.assertEqual(result["check_status"], "UNKNOWN")
@@ -166,7 +166,7 @@ class OtbrRuntimeAdapterTests(unittest.TestCase):
 
     def test_unknown_future_role_is_unknown_not_false(self) -> None:
         payload = active_payload()
-        payload["role"] = "future-role"
+        payload["state"] = "future-role"
         result = adapter._evaluate_node(payload, now=NOW)
         self.assertEqual(result["check_status"], "UNKNOWN")
         self.assertEqual(result["border_router_active"], "UNKNOWN")

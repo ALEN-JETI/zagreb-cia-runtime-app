@@ -27,7 +27,7 @@ NEW_031_SHORT_REASONS = frozenset(
 
 def real_adapter_payload(role: str = "child") -> dict[str, object]:
     return {
-        "role": role,
+        "state": role,
         "omrIpv6Address": [SENSITIVE_ROUTING_VALUES[0]],
         "rlocAddress": SENSITIVE_ROUTING_VALUES[1],
         "leaderData": {"partitionId": 42},

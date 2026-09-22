@@ -42,3 +42,19 @@ The container image is published through the official Home Assistant builder
 composite actions to:
 
 `ghcr.io/alen-jeti/zagreb-cia-runtime`
+
+## 0.3.4: direct runtime evidence
+
+The single fixed GET uses /node, whose handler reads the current OpenThread
+role in the main loop. The previous /api/node resource serializes a cached
+device collection and is not a valid freshness guarantee. There is no fallback
+to cached inventory or role-only data. checked_at is the observation time,
+not a timestamp supplied by the device.
+
+The six-field output and app privileges remain unchanged. An attached role
+proves local Thread attachment only. The current /node response does not expose
+omrIpv6Address, so routing_ready remains UNKNOWN; neither an end-to-end route
+nor full system health is inferred. Disabled/detached is accepted only from
+the direct response. Failed requests stay UNKNOWN/ERROR without a second URL.
+
+Primary source: https://github.com/openthread/ot-br-posix/blob/337711e7038d0b9c8fb46a1ce888ce7f9c4c0c35/src/rest/rest_web_server.cpp

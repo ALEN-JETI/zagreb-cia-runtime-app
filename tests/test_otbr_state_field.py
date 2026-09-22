@@ -17,7 +17,7 @@ class StateFieldTests(unittest.TestCase):
 
     def test_node_state_without_inventory_role(self):
         data = active_payload()
-        del data["role"]
+        data.pop("role", None)
         data["state"] = "leader"
         self.assertEqual(adapter._evaluate_node(data, now=NOW)["border_router_active"], "TRUE")
 

@@ -11,7 +11,7 @@ from typing import Any, Final, Protocol
 from urllib import error, request
 
 
-OTBR_NODE_URL: Final = "http://core-openthread-border-router:8081/api/node"
+OTBR_NODE_URL: Final = "http://core-openthread-border-router:8081/node"
 EVIDENCE_SOURCE: Final = "otbr_rest_node"
 REQUEST_TIMEOUT_SECONDS: Final = 3.0
 MAX_RESPONSE_BYTES: Final = 16 * 1024
@@ -110,13 +110,13 @@ def _has_nonempty_strings(value: Any) -> bool:
 
 
 def _node_role(payload: dict[str, Any]) -> Any:
-    """Prefer live node state; reject contradictory inventory information.
+    """Require direct node state; reject contradictory extra role information.
 
-    OTBR 337711e... serializes NodeInfo.mRole as state and the separate
-    DeviceInfo.mRole as role. The latter may be empty.
+    GET /node reads otThreadGetDeviceRole in the main loop on each request.
+    GET /api/node is cached inventory and must never be used as a fallback.
     """
     if "state" not in payload:
-        return payload.get("role")  # Compatible with the documented legacy shape.
+        return None  # Inventory-only role is not direct runtime evidence.
     state = payload["state"]
     if not isinstance(state, str) or not state.strip():
         return None

@@ -109,6 +109,28 @@ def _has_nonempty_strings(value: Any) -> bool:
     )
 
 
+def _node_role(payload: dict[str, Any]) -> Any:
+    """Prefer live node state; reject contradictory inventory information.
+
+    OTBR 337711e... serializes NodeInfo.mRole as state and the separate
+    DeviceInfo.mRole as role. The latter may be empty.
+    """
+    if "state" not in payload:
+        return payload.get("role")  # Compatible with the documented legacy shape.
+    state = payload["state"]
+    if not isinstance(state, str) or not state.strip():
+        return None
+    state = state.strip().lower()
+    inventory_role = payload.get("role")
+    if inventory_role is not None:
+        if not isinstance(inventory_role, str):
+            return None
+        inventory_role = inventory_role.strip().lower()
+        if inventory_role and inventory_role != state:
+            return None
+    return state
+
+
 def _evaluate_node(payload: Any, *, now: datetime | None = None) -> dict[str, str]:
     if not isinstance(payload, dict):
         return _result(
@@ -117,7 +139,7 @@ def _evaluate_node(payload: Any, *, now: datetime | None = None) -> dict[str, st
             now=now,
         )
 
-    role = payload.get("role")
+    role = _node_role(payload)
     if not isinstance(role, str):
         return _result(
             check_status="UNKNOWN",

@@ -57,4 +57,26 @@ omrIpv6Address, so routing_ready remains UNKNOWN; neither an end-to-end route
 nor full system health is inferred. Disabled/detached is accepted only from
 the direct response. Failed requests stay UNKNOWN/ERROR without a second URL.
 
+## 0.3.5: local runtime process status
+
+The additional parameterless `runtime_status` observer returns only a sanitized,
+volatile process snapshot. It has no network, Home Assistant, credential,
+file-I/O, persistence, thread, queue, automation or background capability.
+Its result contains exactly `runtime_version`, `started_at`, `last_success_at`,
+`last_success_age_seconds`, `freshness_status`, `last_error_status`,
+`pending_requests`, `budget_status` and `checked_at`.
+
+`started_at` is the dispatcher-state initialization time. `last_success_at` and
+its monotonic age cover only a technically completed, schema-valid,
+non-self-referential `otbr_runtime_status` run; a `runtime_status` request never
+creates its own success evidence. This technical completion can coexist with an
+OTBR result whose `check_status` is `ERROR`; the separate sanitized
+`last_error_status` then reports `error` without detail. All such state is lost
+on process restart and returns to `UNKNOWN`/`unknown` as applicable.
+
+Version 0.3.5 intentionally always returns `freshness_status: "unknown"`:
+the OTBR observer is not periodic and no canonical runtime-freshness threshold
+exists. `pending_requests` and `budget_status` are both `UNKNOWN`, because the
+serial dispatcher has no queue and the runtime has no budget source.
+
 Primary source: https://github.com/openthread/ot-br-posix/blob/337711e7038d0b9c8fb46a1ce888ce7f9c4c0c35/src/rest/rest_web_server.cpp

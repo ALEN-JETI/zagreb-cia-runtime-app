@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from zagreb_cia_runtime import cia_observer_dispatcher as dispatcher
+
 
 ROOT = Path(__file__).parents[1]
 APP = ROOT / "zagreb_cia_runtime"
@@ -11,7 +13,8 @@ APP = ROOT / "zagreb_cia_runtime"
 class RuntimePackageTests(unittest.TestCase):
     def test_runtime_security_profile_and_version(self) -> None:
         config = (APP / "config.yaml").read_text(encoding="utf-8")
-        self.assertIn('version: "0.3.4"', config)
+        self.assertIn('version: "0.3.5"', config)
+        self.assertEqual(dispatcher.RUNTIME_VERSION, "0.3.5")
         self.assertIn("stdin: true", config)
         self.assertIn("host_network: false", config)
         self.assertIn("full_access: false", config)
@@ -36,7 +39,7 @@ class RuntimePackageTests(unittest.TestCase):
 
     def test_build_package_contains_dispatcher_without_external_interface(self) -> None:
         dockerfile = (APP / "Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("ARG BUILD_VERSION=0.3.4", dockerfile)
+        self.assertIn("ARG BUILD_VERSION=0.3.5", dockerfile)
         self.assertIn(
             "COPY zagreb_otbr_runtime_adapter.py /zagreb_otbr_runtime_adapter.py",
             dockerfile,
@@ -51,10 +54,22 @@ class RuntimePackageTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('VERSION: "0.3.4"', workflow)
+        self.assertIn('VERSION: "0.3.5"', workflow)
         self.assertIn('ARCHITECTURES: \'["aarch64"]\'', workflow)
         self.assertIn("context: ./zagreb_cia_runtime", workflow)
         self.assertIn("push: ${{ github.event_name == 'release' }}", workflow)
+
+    def test_runtime_status_adds_no_external_interface_or_privilege(self) -> None:
+        config = (APP / "config.yaml").read_text(encoding="utf-8")
+        dockerfile = (APP / "Dockerfile").read_text(encoding="utf-8")
+        self.assertEqual(
+            frozenset(dispatcher.OBSERVER_REGISTRY),
+            {"otbr_runtime_status", "runtime_status"},
+        )
+        for text in (config, dockerfile):
+            for forbidden in ("EXPOSE", "host_network: true", "full_access: true"):
+                with self.subTest(forbidden=forbidden):
+                    self.assertNotIn(forbidden, text)
 
     def test_package_text_files_use_lf_line_endings(self) -> None:
         files = [

@@ -3,8 +3,9 @@ from __future__ import annotations
 import io
 import json
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from zagreb_cia_runtime import cia_observer_dispatcher as dispatcher
 from zagreb_cia_runtime import zagreb_otbr_runtime_adapter as adapter
@@ -61,13 +62,22 @@ def request(request_id: str = "audit-001") -> bytes:
     ).encode()
 
 
-def run_stream(lines: list[bytes], observer) -> list[dict[str, object]]:
+def run_stream(
+    lines: list[bytes],
+    observer=None,
+    *,
+    registry=None,
+    runtime_state=None,
+) -> list[dict[str, object]]:
     input_stream = io.BytesIO(b"".join(line + b"\n" for line in lines))
     output_stream = io.StringIO()
+    if registry is None:
+        registry = {dispatcher.OTBR_RUNTIME_STATUS_OBSERVER: observer}
     dispatcher.serve(
         input_stream,
         output_stream,
-        {"otbr_runtime_status": observer},
+        registry,
+        runtime_state,
     )
     return [json.loads(line) for line in output_stream.getvalue().splitlines()]
 
@@ -334,6 +344,137 @@ class ObserverDispatcherTests(unittest.TestCase):
     def test_dispatcher_source_has_no_arbitrary_execution_facilities(self) -> None:
         source = Path(dispatcher.__file__).read_text(encoding="utf-8")
         for forbidden in ("subprocess", "os.system", "importlib", "eval(", "exec("):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+
+    def test_runtime_status_fresh_state_is_volatile_and_exact(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        result = state.snapshot(now=NOW + timedelta(seconds=5), monotonic_now=105.0)
+        self.assertEqual(
+            result,
+            {
+                "runtime_version": "0.3.5",
+                "started_at": "2026-09-04T12:00:00Z",
+                "last_success_at": "UNKNOWN",
+                "last_success_age_seconds": "UNKNOWN",
+                "freshness_status": "unknown",
+                "last_error_status": "unknown",
+                "pending_requests": "UNKNOWN",
+                "budget_status": "UNKNOWN",
+                "checked_at": "2026-09-04T12:00:05Z",
+            },
+        )
+        self.assertTrue(dispatcher._is_valid_runtime_status(result))
+
+    def test_runtime_status_unknown_start_time_is_not_derived(self) -> None:
+        state = dispatcher._new_runtime_status_state()
+        result = state.snapshot(now=NOW, monotonic_now=100.0)
+        self.assertEqual(result["started_at"], "UNKNOWN")
+        self.assertEqual(result["last_success_at"], "UNKNOWN")
+        self.assertEqual(result["last_success_age_seconds"], "UNKNOWN")
+
+    def test_completed_otbr_updates_technical_success_and_sanitized_error(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        registry = {dispatcher.OTBR_RUNTIME_STATUS_OBSERVER: lambda: adapter_result("ERROR")}
+        with (
+            patch.object(dispatcher, "_utc_now", return_value=NOW + timedelta(seconds=3)),
+            patch.object(dispatcher.time, "monotonic", return_value=103.0),
+        ):
+            response = dispatcher.dispatch_line(request(), registry, state)
+        self.assertEqual(response["status"], "COMPLETED")
+        self.assertEqual(response["result"], adapter_result("ERROR"))
+        result = state.snapshot(now=NOW + timedelta(seconds=9), monotonic_now=109.0)
+        self.assertEqual(result["last_success_at"], "2026-09-04T12:00:03Z")
+        self.assertEqual(result["last_success_age_seconds"], 6)
+        self.assertEqual(result["last_error_status"], "error")
+        self.assertEqual(result["freshness_status"], "unknown")
+
+    def test_completed_healthy_otbr_records_none_and_never_changes_six_fields(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        expected = adapter_result("OK")
+        with (
+            patch.object(dispatcher, "_utc_now", return_value=NOW + timedelta(seconds=4)),
+            patch.object(dispatcher.time, "monotonic", return_value=104.0),
+        ):
+            response = dispatcher.dispatch_line(
+                request(), {dispatcher.OTBR_RUNTIME_STATUS_OBSERVER: lambda: expected}, state
+            )
+        self.assertEqual(response["result"], expected)
+        self.assertEqual(frozenset(response["result"]), adapter.OUTPUT_FIELDS)
+        result = state.snapshot(now=NOW + timedelta(seconds=8), monotonic_now=108.0)
+        self.assertEqual(result["last_success_age_seconds"], 4)
+        self.assertEqual(result["last_error_status"], "none")
+
+    def test_runtime_status_uses_unknown_for_inconsistent_monotonic_age(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        state.record_completed_otbr(adapter_result(), now=NOW, monotonic_now=100.0)
+        result = state.snapshot(now=NOW + timedelta(seconds=1), monotonic_now=99.0)
+        self.assertEqual(result["last_success_age_seconds"], "UNKNOWN")
+
+    def test_otbr_dispatcher_error_is_sanitized_without_detail_leak(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+
+        def failing_observer() -> dict[str, object]:
+            raise RuntimeError("secret runtime exception /private/path")
+
+        response = dispatcher.dispatch_line(
+            request(), {dispatcher.OTBR_RUNTIME_STATUS_OBSERVER: failing_observer}, state
+        )
+        result = state.snapshot(now=NOW, monotonic_now=100.0)
+        serialized = json.dumps({"response": response, "result": result})
+        self.assertEqual(response["status"], "ERROR")
+        self.assertEqual(result["last_error_status"], "error")
+        for forbidden in ("secret", "exception", "/private/path"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_runtime_status_never_records_its_own_success(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        state.record_completed_otbr(
+            adapter_result(), now=NOW + timedelta(seconds=2), monotonic_now=102.0
+        )
+        before = (state.last_success_at, state.last_success_monotonic, state.last_error_status)
+        registry = dispatcher._observer_registry(state)
+        with (
+            patch.object(dispatcher, "_utc_now", return_value=NOW + timedelta(seconds=8)),
+            patch.object(dispatcher.time, "monotonic", return_value=108.0),
+        ):
+            response = dispatcher.dispatch_line(
+                json.dumps(
+                    {"observer": "runtime_status", "request_id": "runtime-001"}
+                ).encode(),
+                registry,
+                state,
+            )
+        self.assertEqual(response["status"], "COMPLETED")
+        self.assertEqual(
+            (state.last_success_at, state.last_success_monotonic, state.last_error_status),
+            before,
+        )
+
+    def test_process_restart_resets_runtime_status_history(self) -> None:
+        first = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        first.record_completed_otbr(adapter_result(), now=NOW, monotonic_now=100.0)
+        restarted = dispatcher._new_runtime_status_state(
+            now=NOW + timedelta(seconds=1), monotonic_now=1.0
+        )
+        result = restarted.snapshot(now=NOW + timedelta(seconds=2), monotonic_now=2.0)
+        self.assertEqual(result["last_success_at"], "UNKNOWN")
+        self.assertEqual(result["last_success_age_seconds"], "UNKNOWN")
+        self.assertEqual(result["last_error_status"], "unknown")
+
+    def test_runtime_status_rejects_invalid_schema_and_keeps_unknown_queue_budget(self) -> None:
+        state = dispatcher._new_runtime_status_state(now=NOW, monotonic_now=100.0)
+        result = state.snapshot(now=NOW, monotonic_now=100.0)
+        self.assertEqual(result["pending_requests"], "UNKNOWN")
+        self.assertEqual(result["budget_status"], "UNKNOWN")
+        self.assertEqual(result["freshness_status"], "unknown")
+        self.assertTrue(dispatcher._is_valid_runtime_status(result))
+        result["pending_requests"] = 0
+        self.assertFalse(dispatcher._is_valid_runtime_status(result))
+
+    def test_runtime_status_has_no_network_or_persistence_facilities(self) -> None:
+        source = Path(dispatcher.__file__).read_text(encoding="utf-8")
+        for forbidden in ("urllib", "socket", "pathlib", "threading", "open("):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
 
